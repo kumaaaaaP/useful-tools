@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="originalTitle">ランダム音声再生ツール</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'Arial', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: transparent; 
+        }
+        #audioPlayer:not([src]) {
+            display: none;
+        }
+        .move-btn {
+            @apply p-1.5 rounded-full text-xs text-gray-500 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition duration-150;
+            line-height: 1;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .playing-item {
+            @apply bg-blue-50 border-blue-400;
+        }
+    </style>
+</head>
+<body class="p-4 font-sans"> 
+    <div class="max-w-sm mx-auto p-4 rounded-lg space-y-4 border border-gray-200 bg-white/90 backdrop-blur-sm">
+        
+        <h1 class="text-xl font-bold text-gray-800 border-b pb-2">音声再生ツール</h1>
+        <p class="text-xs text-gray-600">
+            ファイルを選択し、モードを選択後、「再生開始」を押してください。リストはボタンで並び替え可能です。
+        </p>
+        
+        <label class="block text-sm font-medium text-gray-700" for="fileInput">
+            音声ファイルを選択:
+        </label>
+        <input type="file" id="fileInput" multiple accept=".mp3,.wav,.ogg,.m4a,audio/*"
+               class="block w-full text-xs text-gray-500
+               file:mr-2 file:py-1.5 file:px-3
+               file:rounded-md file:border file:border-gray-300
+               file:text-xs file:font-medium
+               file:bg-gray-50 file:text-gray-700
+               hover:file:bg-gray-100 cursor-pointer">
+
+        <div class="flex flex-col space-y-3">
+            <div class="flex items-center space-x-2">
+                <label for="playMode" class="text-sm font-medium text-gray-700 whitespace-nowrap">モード:</label>
+                <select id="playMode" class="py-1.5 px-2 border border-gray-300 bg-white rounded-md text-sm shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 w-full">
+                    <option value="sequential">並び替え順</option>
+                    <option value="random">完全ランダム</option>
+                </select>
+            </div>
+            
+            <div class="flex space-x-2">
+                <button id="playButton" disabled
+                    class="flex-1 py-2 px-3 rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition duration-150">
+                    <span id="playButtonText">連続再生開始</span>
+                </button>
+                <button id="stopButton" disabled
+                    class="py-2 px-3 rounded-md text-sm font-medium text-gray-700 bg-gray-200 hover:bg-gray-300 disabled:opacity-50 transition duration-150">
+                    停止
+                </button>
+            </div>
+        </div>
+
+        <div id="status" class="text-xs font-medium text-center p-2 rounded-md bg-blue-50/90 text-blue-700 border border-blue-200">ファイルを選択してください。</div>
+
+        <audio id="audioPlayer" controls class="w-full"></audio>
+
+        <div class="sort-buttons flex justify-end space-x-2 pt-2">
+            <button id="sortAlpha" class="py-1 px-2 border border-gray-300 rounded-md text-xs font-medium text-gray-700 bg-white hover:bg-gray-100">
+                名前順ソート
+            </button>
+            <button id="sortOriginal" class="py-1 px-2 border border-gray-300 rounded-md text-xs font-medium text-gray-700 bg-white hover:bg-gray-100">
+                選択順に戻す
+            </button>
+        </div>
+
+        <div id="playlistDiv" class="border border-gray-300 rounded-md p-3 bg-white/80">
+            <h3 class="text-sm font-semibold text-gray-800 mb-2">プレイリスト:</h3>
+            <ul id="playlist-ul" class="space-y-1 max-h-40 overflow-y-auto border-t pt-2">
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const playButton = document.getElementById('playButton');
+        const stopButton = document.getElementById('stopButton');
+        const playModeSelect = document.getElementById('playMode');
+        const sortAlphaButton = document.getElementById('sortAlpha');
+        const sortOriginalButton = document.getElementById('sortOriginal');
+        const status = document.getElementById('status');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const playlistUl = document.getElementById('playlist-ul');
+        const playButtonText = document.getElementById('playButtonText');
+        const originalTitleElement = document.getElementById('originalTitle');
+
+        let audioFiles = []; 
+        let originalOrder = []; 
+        let playbackList = []; 
+        let currentIndex = 0;
+        let isPlaying = false;
+        let playMode = 'sequential'; 
+        const appTitle = originalTitleElement.textContent;
+
+        fileInput.addEventListener('change', function(event) {
+            audioFiles = Array.from(event.target.files);
+            originalOrder = [...audioFiles];
+            
+            if (audioFiles.length > 0) {
+                playButton.disabled = false;
+                status.textContent = `${audioFiles.length}個のファイルを選択しました。`;
+                updatePlaylist();
+                playButtonText.textContent = '連続再生開始';
+            } else {
+                resetState();
+            }
+        });
+
+        function resetState() {
+            isPlaying = false;
+            currentIndex = 0;
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+            if (audioPlayer.src) {
+                URL.revokeObjectURL(audioPlayer.src);
+                audioPlayer.removeAttribute('src');
+            }
+            document.title = appTitle;
+
+            playButton.disabled = audioFiles.length === 0; 
+            stopButton.disabled = true;
+            status.textContent = audioFiles.length > 0 ? `${audioFiles.length}個のファイルが読み込まれました。` : 'ファイルを選択してください。';
+            if (audioFiles.length === 0) {
+                playlistUl.innerHTML = '';
+            } else {
+                updatePlaylist();
+            }
+            playButtonText.textContent = '連続再生開始';
+        }
+
+        function moveItem(fromIndex, toIndex) {
+            if (fromIndex < 0 || fromIndex >= audioFiles.length || toIndex < 0 || toIndex >= audioFiles.length) {
+                return;
+            }
+            [audioFiles[fromIndex], audioFiles[toIndex]] = [audioFiles[toIndex], audioFiles[fromIndex]];
+            
+            updatePlaylist();
+            status.textContent = 'プレイリストの順序を変更しました。';
+        }
+        
+        function updatePlaylist() {
+            playlistUl.innerHTML = '';
+            audioFiles.forEach((file, index) => {
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center py-2.5 px-2 rounded-md border border-gray-200 shadow-sm transition duration-100 bg-white/80';
+                li.dataset.index = index;
+                
+                if (isPlaying && playbackList[currentIndex] === file) {
+                    li.classList.add('playing-item');
+                }
+                
+                const fileInfo = document.createElement('div');
+                fileInfo.className = 'flex items-center w-full min-w-0';
+                fileInfo.innerHTML = `<span class="text-sm font-medium text-gray-500 mr-3 w-6 text-right">${index + 1}.</span>
+                                      <span class="truncate text-sm font-semibold text-gray-700">${file.name}</span>`;
+
+                const moveControls = document.createElement('div');
+                moveControls.className = 'flex items-center space-x-1 ml-4 flex-shrink-0';
+                
+                const moveUpBtn = document.createElement('button');
+                moveUpBtn.className = 'move-btn';
+                moveUpBtn.innerHTML = '↑';
+                moveUpBtn.disabled = index === 0;
+                moveUpBtn.title = '上に移動';
+                moveUpBtn.setAttribute('aria-label', `${file.name}を上に移動`);
+                moveUpBtn.addEventListener('click', () => moveItem(index, index - 1));
+                
+                const moveDownBtn = document.createElement('button');
+                moveDownBtn.className = 'move-btn';
+                moveDownBtn.innerHTML = '↓';
+                moveDownBtn.disabled = index === audioFiles.length - 1;
+                moveDownBtn.title = '下に移動';
+                moveDownBtn.setAttribute('aria-label', `${file.name}を下に移動`);
+                moveDownBtn.addEventListener('click', () => moveItem(index, index + 1));
+
+                moveControls.appendChild(moveUpBtn);
+                moveControls.appendChild(moveDownBtn);
+
+                li.appendChild(fileInfo);
+                li.appendChild(moveControls);
+                
+                playlistUl.appendChild(li);
+            });
+        }
+        
+        sortAlphaButton.addEventListener('click', function() {
+            if (audioFiles.length === 0) return;
+            audioFiles.sort((a, b) => a.name.localeCompare(b.name, 'ja')); 
+            updatePlaylist();
+            status.textContent = 'ファイル名順にソートしました。';
+        });
+
+        sortOriginalButton.addEventListener('click', function() {
+            if (originalOrder.length === 0) return;
+            const reorderedFiles = originalOrder.map(originalFile => 
+                audioFiles.find(currentFile => currentFile === originalFile)
+            ).filter(file => file);
+
+            audioFiles = reorderedFiles;
+            updatePlaylist();
+            status.textContent = '元の選択順に戻しました。';
+        });
+
+        playModeSelect.addEventListener('change', function() {
+            playMode = this.value;
+            status.textContent = `再生モード: ${playMode === 'sequential' ? '並び替え順' : '完全ランダム'}に設定しました。`;
+        });
+
+        function shuffleArray(array) {
+            const shuffled = [...array];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        function playNext() {
+            if (!isPlaying || playbackList.length === 0) return;
+
+            const selectedFile = playbackList[currentIndex];
+            const audioUrl = URL.createObjectURL(selectedFile);
+            
+            if (audioPlayer.src) URL.revokeObjectURL(audioPlayer.src);
+            
+            audioPlayer.src = audioUrl;
+
+            audioPlayer.play().then(() => {
+                const modeText = playMode === 'sequential' ? '順序' : 'ランダム';
+                status.textContent = `${modeText}再生中: ${selectedFile.name} (${currentIndex + 1}/${playbackList.length})`;
+                playButtonText.textContent = '再生中...';
+                document.title = `▶ ${selectedFile.name}`;
+                updatePlaylist();
+            }).catch(error => {
+                console.error('再生エラー:', error);
+                status.textContent = '自動再生がブロックされました。次の曲へスキップします。';
+                handleTrackEnd(); 
+            });
+        }
+        
+        function handleTrackEnd() {
+            if (!isPlaying) return;
+
+            currentIndex++;
+            if (currentIndex >= playbackList.length) {
+                currentIndex = 0;
+                
+                if (playMode === 'random') {
+                    playbackList = shuffleArray([...audioFiles]);
+                    status.textContent = '1周完了。再シャッフルしてループ中...';
+                } else {
+                    status.textContent = '1周完了。ループ中...';
+                }
+            }
+            
+            if (isPlaying) {
+                playNext();
+            } else {
+                resetState();
+            }
+        }
+        
+        audioPlayer.addEventListener('pause', function() {
+            if (isPlaying && playbackList[currentIndex]) {
+                document.title = `⏸ ${playbackList[currentIndex].name}`;
+            }
+        });
+
+        audioPlayer.addEventListener('play', function() {
+            if (isPlaying && playbackList[currentIndex]) {
+                document.title = `▶ ${playbackList[currentIndex].name}`;
+            }
+        });
+
+        audioPlayer.addEventListener('ended', handleTrackEnd);
+
+        playButton.addEventListener('click', function() {
+            if (audioFiles.length === 0) return;
+
+            if (playMode === 'sequential') {
+                playbackList = [...audioFiles]; 
+            } else {
+                playbackList = shuffleArray([...audioFiles]);
+            }
+            currentIndex = 0;
+            isPlaying = true;
+            playButton.disabled = true;
+            stopButton.disabled = false;
+
+            playNext();
+        });
+
+        stopButton.addEventListener('click', function() {
+            resetState();
+            status.textContent = '再生を停止しました。';
+        });
+
+        window.addEventListener('beforeunload', function() {
+            if (audioPlayer.src) {
+                URL.revokeObjectURL(audioPlayer.src);
+            }
+        });
+        
+        updatePlaylist();
+        resetState();
+    </script>
+</body>
+</html>
